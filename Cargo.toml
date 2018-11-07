@@ -1,0 +1,9 @@
+[package]
+name = "winpath"
+version = "0.1.0"
+authors = ["Demi Obenour <demiobenour@gmail.com>"]
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["processenv"] }
