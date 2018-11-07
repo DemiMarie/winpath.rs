@@ -1,7 +1,12 @@
 [package]
 name = "winpath"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Demi Obenour <demiobenour@gmail.com>"]
+description = """
+Windows path canonicalization library in Rust.
+"""
+
+license = "MIT/Apache-2.0"
 
 [dependencies]
 
