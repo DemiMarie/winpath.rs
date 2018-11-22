@@ -1,4 +1,4 @@
-#![config_attr(not(windows), forbid(unsafe_code))]
+#![cfg_attr(not(windows), forbid(unsafe_code))]
 mod dotdot;
 pub use dotdot::*;
 #[cfg(test)]
