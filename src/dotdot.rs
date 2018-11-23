@@ -1,11 +1,21 @@
-use std::usize; const BACKSLASH: u16 = b'\\' as _;
+use std::usize;
+const BACKSLASH: u16 = b'\\' as _;
 const SLASH: u16 = b'/' as _;
 const QUESTION_MARK: u16 = b'?' as _;
 const PERIOD: u16 = b'.' as _;
 const VERBATIM_PREFIX: &'static [u16] = &[BACKSLASH, BACKSLASH, QUESTION_MARK, BACKSLASH];
 const LOCAL_DEVICE: &'static [u16] = &[BACKSLASH, BACKSLASH, PERIOD, BACKSLASH];
-const VERBATIM_UNC_PREFIX: &'static [u16] = &[BACKSLASH, BACKSLASH, QUESTION_MARK, BACKSLASH, b'U' as _, b'N' as _, b'C' as _, BACKSLASH];
-const COLON : u16 = b':' as _;
+const VERBATIM_UNC_PREFIX: &'static [u16] = &[
+    BACKSLASH,
+    BACKSLASH,
+    QUESTION_MARK,
+    BACKSLASH,
+    b'U' as _,
+    b'N' as _,
+    b'C' as _,
+    BACKSLASH,
+];
+const COLON: u16 = b':' as _;
 const C_DRIVE: &'static [u16] = &[b'C' as _, b':' as _];
 fn is_sep(arg: u16) -> bool {
     arg == BACKSLASH || arg == SLASH
@@ -37,8 +47,9 @@ fn is_unc(obj: &[u16]) -> bool {
 }
 
 fn is_redirect(obj: &[u16]) -> bool {
-    obj.get(0) == Some(&(b';'.into())) &&
-    (case_insensitive_eq(&obj[1..], b"LanManRedirector") || case_insensitive_eq(&obj[1..], b"WebDavRedirector"))
+    obj.get(0) == Some(&(b';'.into()))
+        && (case_insensitive_eq(&obj[1..], b"LanManRedirector")
+            || case_insensitive_eq(&obj[1..], b"WebDavRedirector"))
 }
 
 fn make_pipe_path(prefix: &[u16], buf: &[u16], off: usize) -> Vec<u16> {
@@ -69,7 +80,6 @@ fn split_first_part_disallow_empty(buf: &[u16]) -> Result<(&[u16], &[u16]), ()> 
     }
 }
 
-
 fn process_device_path(buf: &[u16]) -> Result<Vec<u16>, ()> {
     fn replace_prefix(buf: &[u16]) -> Vec<u16> {
         let mut v = Vec::with_capacity(buf.len());
@@ -80,10 +90,12 @@ fn process_device_path(buf: &[u16]) -> Result<Vec<u16>, ()> {
 
     let (srv, suffix) = match split_first_part_disallow_empty(&buf[4..]) {
         Ok(x) => x,
-        Err(()) => return match buf.get(4) {
-            None => Err(()),
-            Some(&x) if is_sep(x) => Err(()),
-            Some(_) => Ok(replace_prefix(buf)),
+        Err(()) => {
+            return match buf.get(4) {
+                None => Err(()),
+                Some(&x) if is_sep(x) => Err(()),
+                Some(_) => Ok(replace_prefix(buf)),
+            }
         }
     };
 
@@ -112,7 +124,11 @@ fn check_unc_pipe_path(buf: &[u16], srv: &[u16], share: &[u16], offset: usize) -
         // 24 == br"\;WebDavRedirector\pipe\".len()
         make_pipe_path(VERBATIM_UNC_PREFIX, buf, offset + 8 + srv.len())
     } else {
-        remove_dotdot(buf, offset + srv.len() + share.len(), &VERBATIM_UNC_PREFIX[..]).0
+        remove_dotdot(
+            buf,
+            offset + srv.len() + share.len(),
+            &VERBATIM_UNC_PREFIX[..],
+        ).0
     }
 }
 
@@ -140,14 +156,16 @@ pub fn split_srv_and_share(buf: &[u16]) -> Result<Vec<u16>, ()> {
 mod the_trait {
     pub trait Conv {
         type Output;
-        fn conv <T, U>(&self, cb: T) -> U
-            where T: FnOnce(&[u16]) -> U;
+        fn conv<T, U>(&self, cb: T) -> U
+        where
+            T: FnOnce(&[u16]) -> U;
         fn rev_conv(buf: Vec<u16>) -> Self::Output;
     }
     impl<'a> Conv for &'a [u16] {
         type Output = Vec<u16>;
         fn conv<T, U>(&self, cb: T) -> U
-            where T: FnOnce(&[u16]) -> U
+        where
+            T: FnOnce(&[u16]) -> U,
         {
             cb(self)
         }
@@ -158,8 +176,9 @@ mod the_trait {
     impl<'a> Conv for &'a str {
         type Output = String;
         fn conv<T, U>(&self, cb: T) -> U
-            where T: FnOnce(&[u16]) -> U
-            {
+        where
+            T: FnOnce(&[u16]) -> U,
+        {
             let vec: Vec<_> = self.encode_utf16().collect();
             cb(&vec)
         }
@@ -170,7 +189,8 @@ mod the_trait {
 }
 
 pub fn to_u16<T>(orig_path: &T) -> Result<Vec<u16>, ()>
-    where T: the_trait::Conv
+where
+    T: the_trait::Conv,
 {
     orig_path.conv(|x| Ok(x.to_owned()))
 }
@@ -202,58 +222,59 @@ mod windows {
 mod windows {
     use dotdot::the_trait::Conv;
     pub fn get_current_directory() -> Vec<u16> {
-        ("C:\\alpha").conv(|x|x.to_owned())
+        ("C:\\alpha").conv(|x| x.to_owned())
     }
 }
 
 pub fn to_canon_path<T>(orig_path: &T) -> Result<T::Output, ()>
-    where T: the_trait::Conv
+where
+    T: the_trait::Conv,
 {
-    orig_path.conv(|x| {
-        let start = match x.get(0) {
-            None => return Err(()),
-            Some(q) => *q,
-        };
-        if is_sep(start) {
-            match x.get(1) {
-                None => Ok(x.to_owned()),
-                Some(63) if x.len() >= 4 && x[2] == 63 && is_sep(x[3]) => {
-                   // \??\
-                    Ok(make_pipe_path(VERBATIM_PREFIX, &x[4..], 0))
-                },
-                Some(92) | Some(47) => if x.len() < 4 {
-                    // Too short
-                    Err(())
-                } else if x[2] == b'.' as _ && is_sep(x[3]) {
-                    // \\.\
-                    process_device_path(x)
-                } else if x[2] == (b'?' as _) && is_sep(x[3]) {
-                    // \\?\
-                    Ok(make_pipe_path(VERBATIM_PREFIX, &x[4..], 0))
+    orig_path
+        .conv(|x| {
+            let start = match x.get(0) {
+                None => return Err(()),
+                Some(q) => *q,
+            };
+            if is_sep(start) {
+                match x.get(1) {
+                    None => Ok(x.to_owned()),
+                    Some(63) if x.len() >= 4 && x[2] == 63 && is_sep(x[3]) => {
+                        // \??\
+                        Ok(make_pipe_path(VERBATIM_PREFIX, &x[4..], 0))
+                    }
+                    Some(92) | Some(47) => if x.len() < 4 {
+                        // Too short
+                        Err(())
+                    } else if x[2] == b'.' as _ && is_sep(x[3]) {
+                        // \\.\
+                        process_device_path(x)
+                    } else if x[2] == (b'?' as _) && is_sep(x[3]) {
+                        // \\?\
+                        Ok(make_pipe_path(VERBATIM_PREFIX, &x[4..], 0))
+                    } else {
+                        split_srv_and_share(&x[2..])
+                    },
+                    // Drive-relative paths NYI
+                    Some(_) => unimplemented!(),
+                }
+            } else if x.len() >= 2 && x[1] == COLON {
+                if x.len() == 2 {
+                    let mut res = Vec::with_capacity(7);
+                    res.extend_from_slice(VERBATIM_PREFIX);
+                    res.extend_from_slice(x);
+                    res.push(BACKSLASH);
+                    Ok(res)
                 } else {
-                    split_srv_and_share(&x[2..])
-                },
-                // Drive-relative paths NYI
-                Some(_) => unimplemented!(),
-            }
-        } else if x.len() >= 2 && x[1] == COLON {
-            if x.len() == 2 {
-                let mut res = Vec::with_capacity(7);
-                res.extend_from_slice(VERBATIM_PREFIX);
-                res.extend_from_slice(x);
-                res.push(BACKSLASH);
-                Ok(res)
+                    let mut s = remove_dotdot(x, 3, VERBATIM_PREFIX).0;
+                    s[6] = BACKSLASH;
+                    Ok(s)
+                }
             } else {
-                let mut s = remove_dotdot(x, 3, VERBATIM_PREFIX).0;
-                s[6] = BACKSLASH;
-                Ok(s)
+                unimplemented!()
             }
-        } else {
-            unimplemented!()
-        }
-    }).map(T::rev_conv)
+        }).map(T::rev_conv)
 }
-
 
 pub fn remove_dotdot(buf: &[u16], mut prefix_len: usize, prefix_slice: &[u16]) -> (Vec<u16>, bool) {
     assert!(buf.len() >= prefix_len);
@@ -271,11 +292,14 @@ pub fn remove_dotdot(buf: &[u16], mut prefix_len: usize, prefix_slice: &[u16]) -
                     match output.pop() {
                         Some(92) if seen_non_backslash || output.len() == prefix_len => break,
                         Some(92) => {}
-                        None => { underflow = true; break }
-                        _  => seen_non_backslash = true,
+                        None => {
+                            underflow = true;
+                            break;
+                        }
+                        _ => seen_non_backslash = true,
                     }
                 }
-            },
+            }
             &[46, 46] => {}
             x => {
                 if !x.is_empty() && output.len() > prefix_slice.len() {
@@ -289,16 +313,19 @@ pub fn remove_dotdot(buf: &[u16], mut prefix_len: usize, prefix_slice: &[u16]) -
         output.push(BACKSLASH);
         // panic!("output: {:?}, prefix_len: {:?}", output, prefix_len)
     }
-    (if output.is_empty() {
-        vec!['\\' as _]
-    } else {
-        for i in prefix_slice.len()..prefix_len {
-            if output[i] == b'/' as _ {
-                output[i] = b'\\' as _
+    (
+        if output.is_empty() {
+            vec!['\\' as _]
+        } else {
+            for i in prefix_slice.len()..prefix_len {
+                if output[i] == b'/' as _ {
+                    output[i] = b'\\' as _
+                }
             }
-        };
-        output
-    }, underflow)
+            output
+        },
+        underflow,
+    )
     // assert!(output.len() >= prefix_len);
 }
 
@@ -319,21 +346,29 @@ mod test {
     fn remove_dotdot_test() {
         let (fst, snd) = remove_dotdot(&to_u16(&r"C:\..\NUL").unwrap(), 3, VERBATIM_PREFIX);
         let fst: String = <&str as Conv>::rev_conv(fst);
-        assert_eq!((fst, snd),
-                   (s(&r"\\?\C:\NUL").unwrap(), false));
+        assert_eq!((fst, snd), (s(&r"\\?\C:\NUL").unwrap(), false));
     }
     #[test]
     fn unc_path() {
-        assert_eq!(to_canon_path(&r"\\localhost\pipe\alpha\.."),
-                   s(&r"\\?\UNC\localhost\pipe\alpha\.."));
+        assert_eq!(
+            to_canon_path(&r"\\localhost\pipe\alpha\.."),
+            s(&r"\\?\UNC\localhost\pipe\alpha\..")
+        );
     }
     #[test]
     fn device_path_unc() {
-        assert_eq!(to_canon_path(&r"\\.\unc\localhost\pipe\gamma\.."),
-                   s(&r"\\?\UNC\localhost\pipe\gamma\.."));
-        assert_eq!(to_canon_path(&r"//.\UnC/localhost/pipe/delta/epsilon"),
-                   s(&r"\\?\UNC\localhost\pipe\delta/epsilon"));
-        assert_eq!(to_canon_path(&r"\\.\C:\alpha/beta"), s(&r"\\?\C:\alpha\beta"));
+        assert_eq!(
+            to_canon_path(&r"\\.\unc\localhost\pipe\gamma\.."),
+            s(&r"\\?\UNC\localhost\pipe\gamma\..")
+        );
+        assert_eq!(
+            to_canon_path(&r"//.\UnC/localhost/pipe/delta/epsilon"),
+            s(&r"\\?\UNC\localhost\pipe\delta/epsilon")
+        );
+        assert_eq!(
+            to_canon_path(&r"\\.\C:\alpha/beta"),
+            s(&r"\\?\C:\alpha\beta")
+        );
         assert_eq!(to_canon_path(&r"\\.\C:\.."), s(&r"\\?\C:\"));
     }
     #[test]
@@ -348,8 +383,14 @@ mod test {
     }
     #[test]
     fn respects_verbatim_paths() {
-        assert_eq!(to_canon_path(&r"\\?\C:/alpha/beta"), s(&r"\\?\C:/alpha/beta"));
-        assert_eq!(to_canon_path(&r"\??\C:/alpha/beta"), s(&r"\\?\C:/alpha/beta"))
+        assert_eq!(
+            to_canon_path(&r"\\?\C:/alpha/beta"),
+            s(&r"\\?\C:/alpha/beta")
+        );
+        assert_eq!(
+            to_canon_path(&r"\??\C:/alpha/beta"),
+            s(&r"\\?\C:/alpha/beta")
+        )
     }
     #[test]
     fn accepts_drive_paths() {
@@ -357,7 +398,9 @@ mod test {
     }
     #[test]
     fn slashes_pipe_paths() {
-        assert_eq!(to_canon_path(&r"\\.\pipe//alpha/beta"),
-                   s(&r"\\?\pipe\/alpha/beta"))
+        assert_eq!(
+            to_canon_path(&r"\\.\pipe//alpha/beta"),
+            s(&r"\\?\pipe\/alpha/beta")
+        )
     }
 }
