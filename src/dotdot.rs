@@ -156,14 +156,14 @@ pub fn split_srv_and_share(buf: &[u16]) -> Result<Vec<u16>, ()> {
 mod the_trait {
     pub trait Conv {
         type Output;
-        fn conv<T, U>(&self, cb: T) -> U
+        fn conv<T, U>(self, cb: T) -> U
         where
             T: FnOnce(&[u16]) -> U;
         fn rev_conv(buf: Vec<u16>) -> Self::Output;
     }
     impl<'a> Conv for &'a [u16] {
         type Output = Vec<u16>;
-        fn conv<T, U>(&self, cb: T) -> U
+        fn conv<T, U>(self, cb: T) -> U
         where
             T: FnOnce(&[u16]) -> U,
         {
@@ -175,7 +175,7 @@ mod the_trait {
     }
     impl<'a> Conv for &'a str {
         type Output = String;
-        fn conv<T, U>(&self, cb: T) -> U
+        fn conv<T, U>(self, cb: T) -> U
         where
             T: FnOnce(&[u16]) -> U,
         {
@@ -188,7 +188,7 @@ mod the_trait {
     }
 }
 
-pub fn to_u16<T>(orig_path: &T) -> Result<Vec<u16>, ()>
+pub fn to_u16<T>(orig_path: T) -> Result<Vec<u16>, ()>
 where
     T: the_trait::Conv,
 {
@@ -226,10 +226,11 @@ mod windows {
     }
 }
 
-pub fn to_canon_path<T>(orig_path: &T) -> Result<T::Output, ()>
+pub fn to_canon_path<T>(orig_path: T) -> Result<T::Output, ()>
 where
     T: the_trait::Conv,
 {
+    use self::windows::get_current_directory;
     orig_path
         .conv(|x| {
             let start = match x.get(0) {
@@ -238,7 +239,6 @@ where
             };
             if is_sep(start) {
                 match x.get(1) {
-                    None => Ok(x.to_owned()),
                     Some(63) if x.len() >= 4 && x[2] == 63 && is_sep(x[3]) => {
                         // \??\
                         Ok(make_pipe_path(VERBATIM_PREFIX, &x[4..], 0))
@@ -255,8 +255,16 @@ where
                     } else {
                         split_srv_and_share(&x[2..])
                     },
-                    // Drive-relative paths NYI
-                    Some(_) => unimplemented!(),
+                    None | Some(_) => {
+                        let mut q = get_current_directory();
+                        if q.len() < 2 || q[1] != COLON {
+                            Err(())
+                        } else {
+                            q.resize(2, 0);
+                            q.extend_from_slice(&x);
+                            to_canon_path(&q[..])
+                        }
+                    }
                 }
             } else if x.len() >= 2 && x[1] == COLON {
                 if x.len() == 2 {
@@ -265,13 +273,29 @@ where
                     res.extend_from_slice(x);
                     res.push(BACKSLASH);
                     Ok(res)
-                } else {
+                } else if is_sep(x[2]) {
                     let mut s = remove_dotdot(x, 3, VERBATIM_PREFIX).0;
                     s[6] = BACKSLASH;
                     Ok(s)
+                } else {
+                    let mut cwd = get_current_directory();
+                    if cwd.len() > 2 && cwd[..2] == x[..2] {
+                        if Some(&BACKSLASH) != cwd.last() {
+                            cwd.push(BACKSLASH)
+                        }
+                        cwd.extend_from_slice(&x[2..]);
+                        to_canon_path(&cwd[..])
+                    } else {
+                        Err(())
+                    }
                 }
             } else {
-                unimplemented!()
+                let mut cwd = get_current_directory();
+                if Some(&BACKSLASH) != cwd.last() {
+                    cwd.push(BACKSLASH)
+                }
+                cwd.extend_from_slice(&x);
+                to_canon_path(&cwd[..])
             }
         }).map(T::rev_conv)
 }
@@ -338,69 +362,72 @@ mod test {
     }
     #[test]
     fn broken_paths() {
-        assert!(to_canon_path(&r"\\").is_err());
-        assert!(to_canon_path(&r"\\.").is_err());
-        assert!(to_canon_path(&r"\\\abc").is_err());
+        assert!(to_canon_path(r"\\").is_err());
+        assert!(to_canon_path(r"\\.").is_err());
+        assert!(to_canon_path(r"\\\abc").is_err());
     }
     #[test]
     fn remove_dotdot_test() {
-        let (fst, snd) = remove_dotdot(&to_u16(&r"C:\..\NUL").unwrap(), 3, VERBATIM_PREFIX);
+        let (fst, snd) = remove_dotdot(&to_u16(r"C:\..\NUL").unwrap(), 3, VERBATIM_PREFIX);
         let fst: String = <&str as Conv>::rev_conv(fst);
-        assert_eq!((fst, snd), (s(&r"\\?\C:\NUL").unwrap(), false));
+        assert_eq!((fst, snd), (s(r"\\?\C:\NUL").unwrap(), false));
     }
     #[test]
     fn unc_path() {
         assert_eq!(
-            to_canon_path(&r"\\localhost\pipe\alpha\.."),
-            s(&r"\\?\UNC\localhost\pipe\alpha\..")
+            to_canon_path(r"\\localhost\pipe\alpha\.."),
+            s(r"\\?\UNC\localhost\pipe\alpha\..")
         );
     }
     #[test]
     fn device_path_unc() {
         assert_eq!(
-            to_canon_path(&r"\\.\unc\localhost\pipe\gamma\.."),
-            s(&r"\\?\UNC\localhost\pipe\gamma\..")
+            to_canon_path(r"\\.\unc\localhost\pipe\gamma\.."),
+            s(r"\\?\UNC\localhost\pipe\gamma\..")
         );
         assert_eq!(
-            to_canon_path(&r"//.\UnC/localhost/pipe/delta/epsilon"),
-            s(&r"\\?\UNC\localhost\pipe\delta/epsilon")
+            to_canon_path(r"//.\UnC/localhost/pipe/delta/epsilon"),
+            s(r"\\?\UNC\localhost\pipe\delta/epsilon")
         );
-        assert_eq!(
-            to_canon_path(&r"\\.\C:\alpha/beta"),
-            s(&r"\\?\C:\alpha\beta")
-        );
-        assert_eq!(to_canon_path(&r"\\.\C:\.."), s(&r"\\?\C:\"));
+        assert_eq!(to_canon_path(r"\\.\C:\alpha/beta"), s(r"\\?\C:\alpha\beta"));
+        assert_eq!(to_canon_path(r"\\.\C:\.."), s(r"\\?\C:\"));
     }
     #[test]
     fn no_process_legacy_dos_devices_or_extra_dotdot() {
-        assert_eq!(to_canon_path(&r"C:\..\NUL"), s(&r"\\?\C:\NUL"))
+        assert_eq!(to_canon_path(r"C:\..\NUL"), s(r"\\?\C:\NUL"))
     }
     #[test]
     fn does_normalize_ordinary_files() {
-        assert_eq!(to_canon_path(&r"C:/alpha/beta"), s(&r"\\?\C:\alpha\beta"));
-        assert_eq!(to_canon_path(&r"C:\alpha/.."), s(&r"\\?\C:\"));
-        assert_eq!(to_canon_path(&r"C:\/.."), s(&r"\\?\C:\"))
+        assert_eq!(to_canon_path(r"C:/alpha/beta"), s(r"\\?\C:\alpha\beta"));
+        assert_eq!(to_canon_path(r"C:\alpha/.."), s(r"\\?\C:\"));
+        assert_eq!(to_canon_path(r"C:\/.."), s(r"\\?\C:\"))
     }
     #[test]
     fn respects_verbatim_paths() {
-        assert_eq!(
-            to_canon_path(&r"\\?\C:/alpha/beta"),
-            s(&r"\\?\C:/alpha/beta")
-        );
-        assert_eq!(
-            to_canon_path(&r"\??\C:/alpha/beta"),
-            s(&r"\\?\C:/alpha/beta")
-        )
+        assert_eq!(to_canon_path(r"\\?\C:/alpha/beta"), s(r"\\?\C:/alpha/beta"));
+        assert_eq!(to_canon_path(r"\??\C:/alpha/beta"), s(r"\\?\C:/alpha/beta"))
     }
     #[test]
     fn accepts_drive_paths() {
-        assert_eq!(to_canon_path(&r"\\.\C:"), s(&r"\\?\C:"))
+        assert_eq!(to_canon_path(r"\\.\C:"), s(r"\\?\C:"))
     }
     #[test]
     fn slashes_pipe_paths() {
         assert_eq!(
-            to_canon_path(&r"\\.\pipe//alpha/beta"),
-            s(&r"\\?\pipe\/alpha/beta")
+            to_canon_path(r"\\.\pipe//alpha/beta"),
+            s(r"\\?\pipe\/alpha/beta")
         )
+    }
+    #[test]
+    fn drive_relative_path() {
+        assert_eq!(to_canon_path(r"\a/b/.."), s(r"\\?\C:\a"));
+    }
+    #[test]
+    fn relative_path() {
+        assert_eq!(to_canon_path(r"a/b"), s(r"\\?\C:\alpha\a\b"));
+    }
+    #[test]
+    fn odd_path() {
+        assert_eq!(to_canon_path(r"C:a/b"), s(r"\\?\C:\alpha\a\b"));
     }
 }
