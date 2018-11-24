@@ -219,7 +219,7 @@ mod windows {
 
 #[cfg(not(windows))]
 mod windows {
-    use dotdot::the_trait::Conv;
+    use the_trait::Conv;
     pub fn get_current_directory() -> Vec<u16> {
         ("C:\\alpha").conv(|x| x.to_owned())
     }
