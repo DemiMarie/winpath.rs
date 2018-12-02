@@ -1,1 +1,3 @@
-extern "C" {
+extern "system" {
+    fn NtCreateFile(
+        void 
