@@ -1,9 +1,34 @@
-#include <stdint.h>
-typedef void *HANDLE;
+typedef void *HANDLE, *PVOID, *PSID;
+typedef long NTSTATUS;
 typedef HANDLE *PHANDLE;
-typedef unsigned long ULONG_PTR;
-typedef uint32_t DWORD, ACCESS_MASK;
-typedef uint16_t WORD;
+typedef unsigned long ULONG, *ULONG_PTR;
+typedef unsigned long DWORD, ACCESS_MASK;
+typedef unsigned short WORD, USHORT;
+typedef unsigned char BYTE, UCHAR;
+
+typedef WORD SECURITY_DESCRIPTOR_CONTROL;
+typedef struct _UNICODE_STRING {
+  USHORT Length;
+  USHORT MaximumLength;
+  USHORT *Buffer;
+} UNICODE_STRING, *PUNICODE_STRING;
+
+
+typedef union _LARGE_INTEGER {
+  unsigned long long QuadPart;
+  struct {
+    unsigned long LowPart;
+    unsigned long HighPart;
+  };
+} LARGE_INTEGER, *PLARGE_INTEGER;
+
+typedef struct _ACL {
+  BYTE     AclRevision;
+  BYTE Sbz1;
+  WORD AclSize;
+  WORD AceCount;
+  WORD Sbz2;
+} ACL, *PACL;
 
 
 typedef struct _SECURITY_DESCRIPTOR {
@@ -33,7 +58,7 @@ typedef struct _OBJECT_ATTRIBUTES {
   PVOID           SecurityQualityOfService;
 } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
 
-__stdcall NtCreateFile(
+__stdcall NTSTATUS NtCreateFile(
    PHANDLE            FileHandle,
    ACCESS_MASK        DesiredAccess,
    POBJECT_ATTRIBUTES ObjectAttributes,
@@ -46,11 +71,3 @@ __stdcall NtCreateFile(
    PVOID              EaBuffer,
    ULONG              EaLength
 );
-
-union LARGE_INTEGER {
-  uint64_t QuadPart,
-  struct {
-    uint32_t LowPart,
-    uint32_t HighPart,
-  },
-};
