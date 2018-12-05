@@ -488,7 +488,7 @@ fn bindgen_test_layout__OBJECT_ATTRIBUTES() {
 }
 pub type OBJECT_ATTRIBUTES = _OBJECT_ATTRIBUTES;
 pub type POBJECT_ATTRIBUTES = *mut _OBJECT_ATTRIBUTES;
-extern "C" {
+extern "system" {
     pub fn NtCreateFile(
         FileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,

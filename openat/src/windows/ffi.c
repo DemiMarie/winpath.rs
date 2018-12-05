@@ -23,7 +23,7 @@ typedef union _LARGE_INTEGER {
 } LARGE_INTEGER, *PLARGE_INTEGER;
 
 typedef struct _ACL {
-  BYTE     AclRevision;
+  BYTE AclRevision;
   BYTE Sbz1;
   WORD AclSize;
   WORD AceCount;
@@ -50,7 +50,7 @@ typedef struct _IO_STATUS_BLOCK {
 } IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
 
 typedef struct _OBJECT_ATTRIBUTES {
-  ULONG          Length;
+  ULONG           Length;
   HANDLE          RootDirectory;
   PUNICODE_STRING ObjectName;
   ULONG           Attributes;
