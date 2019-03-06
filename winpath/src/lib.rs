@@ -196,6 +196,7 @@ where
 
 #[cfg(windows)]
 mod windows {
+    extern crate winapi;
     use winapi::um::processenv::GetCurrentDirectoryW;
     pub fn get_current_directory() -> Vec<u16> {
         let mut buf_size = 257;
